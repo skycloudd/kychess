@@ -19,7 +19,7 @@ fn main() {
     while game.result().is_none() {
         let best_move = search_root(&game.current_position(), 6);
 
-        println!("{} ", best_move);
+        println!("played {} ", best_move);
 
         if !game.make_move(best_move) {
             break;
@@ -34,10 +34,10 @@ fn main() {
 }
 
 fn search_root(pos: &Board, depth: u8) -> ChessMove {
-    let mut cache = CacheTable::new(1 << 20, 0);
+    let mut cache = CacheTable::new(1 << 22, 0);
 
     let mut best_move = None;
-    let mut best_score = VALUE_MATED;
+    let mut best_score = VALUE_MATED * 2;
 
     let mut legal_moves = MoveGen::new_legal(pos);
 
@@ -68,14 +68,6 @@ fn search_root(pos: &Board, depth: u8) -> ChessMove {
         depth,
     );
 
-    // println!(
-    //     "info depth {} nodes {} score cp {:?} pv {}",
-    //     depth,
-    //     nodes_searched,
-    //     best_score,
-    //     best_move.unwrap()
-    // );
-
     best_move.unwrap()
 }
 
@@ -103,6 +95,8 @@ fn iterate_legals(
             }
         };
 
+        println!("{} {}", legal, score);
+
         if score > *best_score {
             *best_score = score;
             *best_move = Some(legal);
@@ -115,11 +109,7 @@ fn negamax(pos: &Board, cache: &mut CacheTable<i32>, depth: u8, mut alpha: i32, 
         return evaluate(pos);
     }
 
-    let mut best_score = VALUE_MATED;
-
-    let legal_moves = MoveGen::new_legal(pos);
-
-    for legal in legal_moves {
+    for legal in MoveGen::new_legal(pos) {
         let new_pos = pos.make_move_new(legal);
 
         let position_hash = new_pos.get_hash();
@@ -136,11 +126,7 @@ fn negamax(pos: &Board, cache: &mut CacheTable<i32>, depth: u8, mut alpha: i32, 
         };
 
         if score >= beta {
-            return score;
-        }
-
-        if score > best_score {
-            best_score = score;
+            return beta;
         }
 
         if score > alpha {
@@ -148,7 +134,7 @@ fn negamax(pos: &Board, cache: &mut CacheTable<i32>, depth: u8, mut alpha: i32, 
         }
     }
 
-    best_score
+    alpha
 }
 
 fn evaluate(pos: &Board) -> i32 {
