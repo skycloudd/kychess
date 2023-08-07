@@ -1,13 +1,13 @@
 use chess::{Board, CacheTable, ChessMove, Color, Game, MoveGen, Piece, Square, EMPTY};
 
-const VALUE_MATED: i32 = std::i32::MIN / 2;
-const VALUE_MATE: i32 = std::i32::MAX / 2;
+const INFINITY: i32 = 1_000_000;
 
 fn main() {
     // let mut game = Game::new();
 
     let mut game = <Game as std::str::FromStr>::from_str(
         "rn1Rnk1r/p1p2ppp/2q5/8/8/1Pb2N2/P1P1QPPP/1RB3K1 w - - 2 18",
+        // "rn1Rnk1r/p1p2ppp/2q5/8/8/BPb2N2/P1P1QPPP/1R4K1 b - - 3 18",
         // "5Kbk/6pp/6P1/8/8/8/8/7R w - -",
         // "7k/3R3P/5K2/8/2b5/8/8/8 w - - 7 7",
         // "7k/8/8/6K1/5R2/8/8/8 w - - 9 8",
@@ -17,9 +17,9 @@ fn main() {
     println!("position: {}", game.current_position());
 
     while game.result().is_none() {
-        let best_move = search_root(&game.current_position(), 6);
+        let (best_move, best_score) = search_root(&game.current_position(), 6);
 
-        println!("played {} ", best_move);
+        println!("played {} {}", best_move, best_score);
 
         if !game.make_move(best_move) {
             break;
@@ -33,17 +33,13 @@ fn main() {
     println!("game over: {:?}", game.result().unwrap());
 }
 
-fn search_root(pos: &Board, depth: u8) -> ChessMove {
-    let mut cache = CacheTable::new(1 << 22, 0);
+fn search_root(pos: &Board, depth: u8) -> (ChessMove, i32) {
+    let mut cache = CacheTable::new(1 << 20, 0);
 
     let mut best_move = None;
-    let mut best_score = VALUE_MATED * 2;
+    let mut best_score = -INFINITY - 1;
 
     let mut legal_moves = MoveGen::new_legal(pos);
-
-    if legal_moves.len() == 1 {
-        return legal_moves.next().unwrap();
-    }
 
     let targets = pos.color_combined(!pos.side_to_move());
     legal_moves.set_iterator_mask(*targets);
@@ -68,7 +64,7 @@ fn search_root(pos: &Board, depth: u8) -> ChessMove {
         depth,
     );
 
-    best_move.unwrap()
+    (best_move.unwrap(), best_score)
 }
 
 fn iterate_legals(
@@ -87,7 +83,7 @@ fn iterate_legals(
         let score = match cache.get(position_hash) {
             Some(score) => score,
             None => {
-                let score = -negamax(&new_pos, cache, depth - 1, VALUE_MATED, VALUE_MATE);
+                let score = -negamax(&new_pos, cache, depth - 1, -INFINITY, INFINITY);
 
                 cache.add(position_hash, score);
 
@@ -168,8 +164,8 @@ fn evaluate(pos: &Board) -> i32 {
         }
         chess::BoardStatus::Stalemate => 0,
         chess::BoardStatus::Checkmate => match pos.side_to_move() {
-            Color::White => VALUE_MATED,
-            Color::Black => VALUE_MATE,
+            Color::White => -INFINITY,
+            Color::Black => INFINITY,
         },
     };
 
@@ -198,47 +194,27 @@ fn piece_square(piece: &Piece, piece_colour: Color, square: Square) -> i32 {
 }
 
 const PAWN_TABLE: [i32; 64] = [
-    0, 0, 0, 0, 0, 0, 0, 0, //
-    50, 50, 50, 50, 50, 50, 50, 50, //
-    10, 10, 20, 30, 30, 20, 10, 10, //
-    5, 5, 10, 25, 25, 10, 5, 5, //
-    0, 0, 0, 20, 20, 0, 0, 0, //
-    5, -5, -10, 0, 0, -10, -5, 5, //
-    5, 10, 10, -20, -20, 10, 10, 5, //
-    0, 0, 0, 0, 0, 0, 0, 0, //
+    0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5,
+    10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20,
+    -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
 const KNIGHT_TABLE: [i32; 64] = [
-    -50, -40, -30, -30, -30, -30, -40, -50, //
-    -40, -20, 0, 0, 0, 0, -20, -40, //
-    -30, 0, 10, 15, 15, 10, 0, -30, //
-    -30, 5, 15, 20, 20, 15, 5, -30, //
-    -30, 0, 15, 20, 20, 15, 0, -30, //
-    -30, 5, 10, 15, 15, 10, 5, -30, //
-    -40, -20, 0, 5, 5, 0, -20, -40, //
-    -50, -40, -30, -30, -30, -30, -40, -50, //
+    -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10,
+    0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10,
+    5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
 ];
 
 const BISHOP_TABLE: [i32; 64] = [
-    -20, -10, -10, -10, -10, -10, -10, -20, //
-    -10, 0, 0, 0, 0, 0, 0, -10, //
-    -10, 0, 5, 10, 10, 5, 0, -10, //
-    -10, 5, 5, 10, 10, 5, 5, -10, //
-    -10, 0, 10, 10, 10, 10, 0, -10, //
-    -10, 10, 10, 10, 10, 10, 10, -10, //
-    -10, 5, 0, 0, 0, 0, 5, -10, //
-    -20, -10, -10, -10, -10, -10, -10, -20, //
+    -20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0,
+    -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10,
+    -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20,
 ];
 
 const ROOK_TABLE: [i32; 64] = [
-    0, 0, 0, 0, 0, 0, 0, 0, //
-    5, 10, 10, 10, 10, 10, 10, 5, //
-    -5, 0, 0, 0, 0, 0, 0, -5, //
-    -5, 0, 0, 0, 0, 0, 0, -5, //
-    -5, 0, 0, 0, 0, 0, 0, -5, //
-    -5, 0, 0, 0, 0, 0, 0, -5, //
-    -5, 0, 0, 0, 0, 0, 0, -5, //
-    0, 0, 0, 5, 5, 0, 0, 0, //
+    0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0,
+    0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0,
+    0, 5, 5, 0, 0, 0,
 ];
 
 const QUEEN_TABLE: [i32; 64] = [
@@ -248,12 +224,8 @@ const QUEEN_TABLE: [i32; 64] = [
 ];
 
 const KING_TABLE: [i32; 64] = [
-    -30, -40, -40, -50, -50, -40, -40, -30, //
-    -30, -40, -40, -50, -50, -40, -40, -30, //
-    -30, -40, -40, -50, -50, -40, -40, -30, //
-    -30, -40, -40, -50, -50, -40, -40, -30, //
-    -20, -30, -30, -40, -40, -30, -30, -20, //
-    -10, -20, -20, -20, -20, -20, -20, -10, //
-    20, 20, 0, 0, 0, 0, 20, 20, //
-    20, 30, 10, 0, 0, 10, 30, 20, //
+    -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -30, -40, -40,
+    -50, -50, -40, -40, -30, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30,
+    -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, 0, 0, 0, 0, 20, 20, 20, 30, 10, 0, 0,
+    10, 30, 20,
 ];
