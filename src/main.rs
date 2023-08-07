@@ -19,7 +19,7 @@ fn main() {
     while game.result().is_none() {
         let best_move = search_root(&game.current_position(), 6);
 
-        println!("played {} ", best_move);
+        println!("{} ", best_move);
 
         if !game.make_move(best_move) {
             break;
@@ -30,7 +30,7 @@ fn main() {
         }
     }
 
-    println!("\ngame over: {:?}", game.result().unwrap());
+    println!("game over: {:?}", game.result().unwrap());
 }
 
 fn search_root(pos: &Board, depth: u8) -> ChessMove {
@@ -38,8 +38,6 @@ fn search_root(pos: &Board, depth: u8) -> ChessMove {
 
     let mut best_move = None;
     let mut best_score = VALUE_MATED;
-
-    let mut nodes_searched = 0;
 
     let mut legal_moves = MoveGen::new_legal(pos);
 
@@ -57,7 +55,6 @@ fn search_root(pos: &Board, depth: u8) -> ChessMove {
         pos,
         &mut cache,
         depth,
-        &mut nodes_searched,
     );
 
     legal_moves.set_iterator_mask(!EMPTY);
@@ -69,16 +66,15 @@ fn search_root(pos: &Board, depth: u8) -> ChessMove {
         pos,
         &mut cache,
         depth,
-        &mut nodes_searched,
     );
 
-    println!(
-        "info depth {} nodes {} score cp {:?} pv {}",
-        depth,
-        nodes_searched,
-        best_score,
-        best_move.unwrap()
-    );
+    // println!(
+    //     "info depth {} nodes {} score cp {:?} pv {}",
+    //     depth,
+    //     nodes_searched,
+    //     best_score,
+    //     best_move.unwrap()
+    // );
 
     best_move.unwrap()
 }
@@ -90,7 +86,6 @@ fn iterate_legals(
     pos: &Board,
     cache: &mut CacheTable<i32>,
     depth: u8,
-    nodes_searched: &mut u64,
 ) {
     for legal in legal_moves {
         let new_pos = pos.make_move_new(legal);
@@ -100,24 +95,13 @@ fn iterate_legals(
         let score = match cache.get(position_hash) {
             Some(score) => score,
             None => {
-                let score = -negamax(
-                    &new_pos,
-                    cache,
-                    nodes_searched,
-                    depth - 1,
-                    VALUE_MATED,
-                    VALUE_MATE,
-                );
+                let score = -negamax(&new_pos, cache, depth - 1, VALUE_MATED, VALUE_MATE);
 
                 cache.add(position_hash, score);
 
                 score
             }
         };
-
-        println!("{}, {}", legal, score);
-
-        *nodes_searched += 1;
 
         if score > *best_score {
             *best_score = score;
@@ -126,14 +110,7 @@ fn iterate_legals(
     }
 }
 
-fn negamax(
-    pos: &Board,
-    cache: &mut CacheTable<i32>,
-    nodes_searched: &mut u64,
-    depth: u8,
-    mut alpha: i32,
-    beta: i32,
-) -> i32 {
+fn negamax(pos: &Board, cache: &mut CacheTable<i32>, depth: u8, mut alpha: i32, beta: i32) -> i32 {
     if depth == 0 {
         return evaluate(pos);
     }
@@ -150,15 +127,13 @@ fn negamax(
         let score = match cache.get(position_hash) {
             Some(score) => score,
             None => {
-                let score = -negamax(&new_pos, cache, nodes_searched, depth - 1, -beta, -alpha);
+                let score = -negamax(&new_pos, cache, depth - 1, -beta, -alpha);
 
                 cache.add(position_hash, score);
 
                 score
             }
         };
-
-        *nodes_searched += 1;
 
         if score >= beta {
             return score;
