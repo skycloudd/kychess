@@ -5,4 +5,6 @@ edition = "2021"
 
 [dependencies]
 chess = "3.2.0"
+crossbeam-channel = "0.5.8"
+vampirc-uci = { version = "0.11.1", features = ["chess"] }
 # shakmaty = "0.26.0"
