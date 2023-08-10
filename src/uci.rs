@@ -150,13 +150,13 @@ impl Uci {
                                 vampirc_uci::Duration::from_std(summary.time).unwrap(),
                             ),
                             if summary.cp > INFINITY / 2 || summary.cp < -INFINITY / 2 {
-                                let mate_in_plies = INFINITY - summary.cp.abs();
-
-                                let mate_in = if mate_in_plies % 2 == 0 {
-                                    mate_in_plies / 2
+                                let mate_in_plies = if summary.cp > 0 {
+                                    INFINITY - summary.cp
                                 } else {
-                                    mate_in_plies / 2 + 1
+                                    -INFINITY - summary.cp
                                 };
+
+                                let mate_in = mate_in_plies / 2 + mate_in_plies % 2;
 
                                 UciInfoAttribute::Score {
                                     cp: None,

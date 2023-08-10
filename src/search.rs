@@ -219,7 +219,7 @@ impl Search {
         let position_hash = refs.board.get_hash();
 
         if let Some(tt_entry) = refs.transposition_table.get(position_hash) {
-            if let Some((tt_value, _)) = tt_entry.get(depth, refs.search_state.ply) {
+            if let Some((tt_value, _)) = tt_entry.get(depth, refs.search_state.ply, alpha, beta) {
                 if !is_root {
                     return tt_value;
                 }
@@ -269,7 +269,7 @@ impl Search {
                         depth,
                         refs.search_state.ply,
                         HashFlag::Beta,
-                        eval_score,
+                        beta,
                         best_move.unwrap(),
                     ),
                 );
@@ -331,6 +331,7 @@ impl Search {
         }
 
         let eval_score = evaluate_position(refs.board);
+
         if eval_score >= beta {
             return beta;
         }
@@ -602,22 +603,37 @@ impl SearchData {
         }
     }
 
-    pub fn get(&self, depth: u8, ply: u8) -> Option<(i32, ChessMove)> {
+    pub fn get(&self, depth: u8, ply: u8, alpha: i32, beta: i32) -> Option<(i32, ChessMove)> {
         let mut value = None;
 
         if self.depth > depth {
-            let mut v = self.eval;
+            match self.flag {
+                HashFlag::Exact => {
+                    let mut v = self.eval;
 
-            if v > INFINITY / 2 {
-                v -= ply as i32;
-            } else if v < -INFINITY / 2 {
-                v += ply as i32;
+                    if v > INFINITY / 2 {
+                        v -= ply as i32;
+                    } else if v < -INFINITY / 2 {
+                        v += ply as i32;
+                    }
+
+                    value = Some(v);
+                }
+                HashFlag::Alpha => {
+                    if self.eval <= alpha {
+                        value = Some(alpha);
+                    }
+                }
+                HashFlag::Beta => {
+                    if self.eval >= beta {
+                        value = Some(beta);
+                    }
+                }
+                HashFlag::Nothing => (),
             }
-
-            value = Some((v, self.best_move));
         }
 
-        value
+        value.map(|v| (v, self.best_move))
     }
 }
 
