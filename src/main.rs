@@ -3,7 +3,7 @@ use search::{Search, SearchCommand, SearchInformation, SearchMode, SearchParams}
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use uci::{Uci, UciControl, UciReport};
+use uci::{GameTime, Uci, UciControl, UciReport};
 use vampirc_uci::UciMessage;
 
 mod evaluation;
@@ -80,12 +80,21 @@ impl Engine {
                     UciReport::Quit => self.quit(),
                     UciReport::GoInfinite => self.search.send(SearchCommand::Start(SearchParams {
                         search_mode: SearchMode::Infinite,
-                        move_time: Duration::from_secs(0),
+                        move_time: Duration::default(),
+                        game_time: GameTime::default(),
                     })),
                     UciReport::GoMoveTime(move_time) => {
                         self.search.send(SearchCommand::Start(SearchParams {
                             search_mode: SearchMode::MoveTime,
-                            move_time,
+                            move_time: move_time - Duration::from_millis(50), // overhead
+                            game_time: GameTime::default(),
+                        }))
+                    }
+                    UciReport::GoGameTime(game_time) => {
+                        self.search.send(SearchCommand::Start(SearchParams {
+                            search_mode: SearchMode::GameTime,
+                            move_time: Duration::default(),
+                            game_time,
                         }))
                     }
                     UciReport::Unknown => (),
@@ -94,6 +103,9 @@ impl Engine {
                     SearchInformation::BestMove(bm) => self.uci.send(UciControl::BestMove(bm)),
                     SearchInformation::Summary(summary) => {
                         self.uci.send(UciControl::SearchSummary(summary))
+                    }
+                    SearchInformation::ExtraInfo(info) => {
+                        self.uci.send(UciControl::ExtraInfo(info))
                     }
                 },
             }

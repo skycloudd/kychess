@@ -1,5 +1,5 @@
 use crate::search::SearchSummary;
-use crate::Information;
+use crate::{Information, INFINITY};
 use chess::ChessMove;
 use crossbeam_channel::Sender;
 use std::thread::{self, JoinHandle};
@@ -85,16 +85,26 @@ impl Uci {
                                 UciTimeControl::Infinite => UciReport::GoInfinite,
 
                                 UciTimeControl::TimeLeft {
-                                    white_time: _,
-                                    black_time: _,
-                                    white_increment: _,
-                                    black_increment: _,
-                                    moves_to_go: _,
-                                } => todo!(),
+                                    white_time,
+                                    black_time,
+                                    white_increment,
+                                    black_increment,
+                                    moves_to_go,
+                                } => UciReport::GoGameTime(GameTime {
+                                    white_time: white_time
+                                        .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
+                                    black_time: black_time
+                                        .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
+                                    white_increment: white_increment
+                                        .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
+                                    black_increment: black_increment
+                                        .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
+                                    moves_to_go,
+                                }),
 
-                                UciTimeControl::MoveTime(movetime) => {
-                                    UciReport::GoMoveTime(movetime.to_std().unwrap())
-                                }
+                                UciTimeControl::MoveTime(movetime) => UciReport::GoMoveTime(
+                                    movetime.to_std().unwrap_or(Duration::from_secs(0)),
+                                ),
                             },
                             None => todo!(),
                         },
@@ -139,11 +149,28 @@ impl Uci {
                             UciInfoAttribute::Time(
                                 vampirc_uci::Duration::from_std(summary.time).unwrap(),
                             ),
-                            UciInfoAttribute::Score {
-                                cp: Some(summary.cp),
-                                mate: None,
-                                lower_bound: None,
-                                upper_bound: None,
+                            if summary.cp > INFINITY / 2 || summary.cp < -INFINITY / 2 {
+                                let mate_in_plies = INFINITY - summary.cp.abs();
+
+                                let mate_in = if mate_in_plies % 2 == 0 {
+                                    mate_in_plies / 2
+                                } else {
+                                    mate_in_plies / 2 + 1
+                                };
+
+                                UciInfoAttribute::Score {
+                                    cp: None,
+                                    mate: Some(mate_in as i8),
+                                    lower_bound: None,
+                                    upper_bound: None,
+                                }
+                            } else {
+                                UciInfoAttribute::Score {
+                                    cp: Some(summary.cp),
+                                    mate: None,
+                                    lower_bound: None,
+                                    upper_bound: None,
+                                }
                             },
                             UciInfoAttribute::Nodes(summary.nodes),
                             UciInfoAttribute::Nps(summary.nps),
@@ -151,6 +178,9 @@ impl Uci {
                         ];
 
                         println!("{}", UciMessage::Info(attrs));
+                    }
+                    UciControl::ExtraInfo(info) => {
+                        println!("{}", UciMessage::info_string(info));
                     }
                 }
             }
@@ -172,7 +202,17 @@ pub enum UciReport {
     Quit,
     GoInfinite,
     GoMoveTime(Duration),
+    GoGameTime(GameTime),
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct GameTime {
+    pub white_time: Option<Duration>,
+    pub black_time: Option<Duration>,
+    pub white_increment: Option<Duration>,
+    pub black_increment: Option<Duration>,
+    pub moves_to_go: Option<u8>,
 }
 
 pub enum UciControl {
@@ -181,4 +221,5 @@ pub enum UciControl {
     Quit,
     BestMove(ChessMove),
     SearchSummary(SearchSummary),
+    ExtraInfo(String),
 }

@@ -1,6 +1,7 @@
 use crate::evaluation::evaluate_position;
+use crate::uci::GameTime;
 use crate::{Information, INFINITY};
-use chess::{Board, CacheTable, ChessMove, MoveGen, EMPTY};
+use chess::{Board, CacheTable, ChessMove, Color, MoveGen, Piece, EMPTY};
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -88,6 +89,55 @@ impl Search {
         let mut root_pv = Vec::new();
         let mut stop = false;
 
+        if refs.search_params.search_mode == SearchMode::GameTime {
+            // calculate total available time for this move
+            let game_time = &refs.search_params.game_time;
+
+            let is_white = refs.board.side_to_move() == chess::Color::White;
+
+            let clock = if is_white {
+                game_time.white_time.unwrap()
+            } else {
+                game_time.black_time.unwrap()
+            };
+
+            let increment = if is_white {
+                game_time
+                    .white_increment
+                    .unwrap_or(Duration::from_millis(0))
+            } else {
+                game_time
+                    .black_increment
+                    .unwrap_or(Duration::from_millis(0))
+            };
+
+            let base_time = match game_time.moves_to_go {
+                Some(mtg) => {
+                    if mtg == 0 {
+                        clock
+                    } else {
+                        clock / mtg as u32
+                    }
+                }
+                None => clock / 20,
+            };
+
+            let time_slice = base_time + increment - Duration::from_millis(100);
+
+            let factor = 0.4;
+
+            refs.search_state.allocated_time = time_slice.mul_f64(factor);
+
+            refs.report_tx
+                .send(Information::SearchInformation(
+                    SearchInformation::ExtraInfo(format!(
+                        "allocated time: {:?}",
+                        refs.search_state.allocated_time
+                    )),
+                ))
+                .unwrap();
+        }
+
         let alpha = -INFINITY;
         let beta = INFINITY;
 
@@ -142,23 +192,7 @@ impl Search {
         let is_root = refs.search_state.ply == 0;
 
         if refs.search_state.nodes & 0x7ff == 0 {
-            match refs.control_rx.try_recv().unwrap_or(SearchCommand::Nothing) {
-                SearchCommand::Stop => refs.search_state.terminate = SearchTerminate::Stop,
-                SearchCommand::Quit => refs.search_state.terminate = SearchTerminate::Quit,
-
-                SearchCommand::Start(_) | SearchCommand::Nothing => (),
-            };
-
-            match refs.search_params.search_mode {
-                SearchMode::Infinite => (),
-                SearchMode::MoveTime => {
-                    if let Some(start_time) = refs.search_state.start_time {
-                        if start_time.elapsed() > refs.search_params.move_time {
-                            refs.search_state.terminate = SearchTerminate::Stop;
-                        }
-                    }
-                }
-            }
+            check_terminate(refs);
         }
 
         if refs.search_state.terminate != SearchTerminate::Nothing {
@@ -212,26 +246,30 @@ impl Search {
 
             let mut node_pv = Vec::new();
 
-            let score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
+            let mut eval_score = 0;
+
+            if !is_draw(refs) {
+                eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
+            }
 
             refs.search_state.ply -= 1;
 
             *refs.board = old_pos;
 
-            if score > best_eval_score {
-                best_eval_score = score;
+            if eval_score > best_eval_score {
+                best_eval_score = eval_score;
 
                 best_move = Some(legal);
             }
 
-            if score >= beta {
+            if eval_score >= beta {
                 refs.transposition_table.add(
                     position_hash,
                     SearchData::create(
                         depth,
                         refs.search_state.ply,
                         HashFlag::Beta,
-                        score,
+                        eval_score,
                         best_move.unwrap(),
                     ),
                 );
@@ -239,8 +277,8 @@ impl Search {
                 return beta;
             }
 
-            if score > alpha {
-                alpha = score;
+            if eval_score > alpha {
+                alpha = eval_score;
 
                 hash_flag = HashFlag::Exact;
 
@@ -281,23 +319,7 @@ impl Search {
         refs.search_state.nodes += 1;
 
         if refs.search_state.nodes & 0x7ff == 0 {
-            match refs.control_rx.try_recv().unwrap_or(SearchCommand::Nothing) {
-                SearchCommand::Stop => refs.search_state.terminate = SearchTerminate::Stop,
-                SearchCommand::Quit => refs.search_state.terminate = SearchTerminate::Quit,
-
-                SearchCommand::Start(_) | SearchCommand::Nothing => (),
-            };
-
-            match refs.search_params.search_mode {
-                SearchMode::Infinite => (),
-                SearchMode::MoveTime => {
-                    if let Some(start_time) = refs.search_state.start_time {
-                        if start_time.elapsed() > refs.search_params.move_time {
-                            refs.search_state.terminate = SearchTerminate::Stop;
-                        }
-                    }
-                }
-            }
+            check_terminate(refs);
         }
 
         if refs.search_state.terminate != SearchTerminate::Nothing {
@@ -357,6 +379,125 @@ impl Search {
     }
 }
 
+fn is_draw(refs: &mut SearchRefs) -> bool {
+    // is_repition(refs) || (refs.halfmove_clock >= 100) ||
+    is_insufficient_material(refs)
+}
+
+fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
+    let white_pawn_count = (refs.board.pieces(Piece::Pawn)
+        & refs.board.color_combined(Color::White))
+    .0
+    .count_ones();
+
+    let black_pawn_count = (refs.board.pieces(Piece::Pawn)
+        & refs.board.color_combined(Color::Black))
+    .0
+    .count_ones();
+
+    let white_bishop_count = (refs.board.pieces(Piece::Bishop)
+        & refs.board.color_combined(Color::White))
+    .0
+    .count_ones();
+    let black_bishop_count = (refs.board.pieces(Piece::Bishop)
+        & refs.board.color_combined(Color::Black))
+    .0
+    .count_ones();
+
+    let white_knight_count = (refs.board.pieces(Piece::Knight)
+        & refs.board.color_combined(Color::White))
+    .0
+    .count_ones();
+    let black_knight_count = (refs.board.pieces(Piece::Knight)
+        & refs.board.color_combined(Color::Black))
+    .0
+    .count_ones();
+
+    let white_rook_count = (refs.board.pieces(Piece::Rook)
+        & refs.board.color_combined(Color::White))
+    .0
+    .count_ones();
+    let black_rook_count = (refs.board.pieces(Piece::Rook)
+        & refs.board.color_combined(Color::Black))
+    .0
+    .count_ones();
+
+    let white_queen_count = (refs.board.pieces(Piece::Queen)
+        & refs.board.color_combined(Color::White))
+    .0
+    .count_ones();
+    let black_queen_count = (refs.board.pieces(Piece::Queen)
+        & refs.board.color_combined(Color::Black))
+    .0
+    .count_ones();
+
+    if white_pawn_count > 0
+        || black_pawn_count > 0
+        || white_rook_count > 0
+        || black_rook_count > 0
+        || white_queen_count > 0
+        || black_queen_count > 0
+    {
+        return false;
+    }
+
+    if white_bishop_count <= 1 && black_bishop_count == 0 {
+        return true;
+    }
+
+    if white_bishop_count == 0 && black_bishop_count <= 1 {
+        return true;
+    }
+
+    if white_knight_count <= 1 && black_knight_count == 0 {
+        return true;
+    }
+
+    if white_knight_count == 0 && black_knight_count <= 1 {
+        return true;
+    }
+
+    false
+}
+
+fn check_terminate(refs: &mut SearchRefs) {
+    match refs.control_rx.try_recv().unwrap_or(SearchCommand::Nothing) {
+        SearchCommand::Stop => refs.search_state.terminate = SearchTerminate::Stop,
+        SearchCommand::Quit => refs.search_state.terminate = SearchTerminate::Quit,
+
+        SearchCommand::Start(_) | SearchCommand::Nothing => (),
+    };
+
+    match refs.search_params.search_mode {
+        SearchMode::Infinite => (),
+        SearchMode::MoveTime => {
+            if let Some(start_time) = refs.search_state.start_time {
+                if start_time.elapsed() > refs.search_params.move_time {
+                    refs.search_state.terminate = SearchTerminate::Stop;
+                }
+            }
+        }
+        SearchMode::GameTime => {
+            let elapsed = refs.search_state.start_time.unwrap().elapsed();
+            let allocated = refs.search_state.allocated_time;
+
+            let critical_time = Duration::from_secs(5);
+            let ok_time = Duration::from_secs(30);
+
+            let overshoot_factor = match allocated {
+                x if x > ok_time => 2.0,
+                x if x > critical_time && x <= ok_time => 1.5,
+                x if x <= critical_time => 1.0,
+                _ => 1.0,
+            };
+
+            if elapsed >= (allocated.mul_f64(overshoot_factor)) {
+                refs.search_state.terminate = SearchTerminate::Stop
+            }
+        }
+    }
+}
+
 pub enum SearchCommand {
     Start(SearchParams),
     Stop,
@@ -374,12 +515,14 @@ enum SearchTerminate {
 pub struct SearchParams {
     pub search_mode: SearchMode, // search mode
     pub move_time: Duration,     // maximum time to search per move
+    pub game_time: GameTime,     // time left in the game
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum SearchMode {
     Infinite,
     MoveTime,
+    GameTime,
 }
 
 pub struct SearchRefs<'a> {
@@ -398,6 +541,7 @@ struct SearchState {
     depth: u8,                   // current depth
     ply: u8,                     // current number of plies from root
     terminate: SearchTerminate,  // terminate flag
+    allocated_time: Duration,    // time allocated to search
 }
 
 impl SearchState {
@@ -409,6 +553,7 @@ impl SearchState {
             depth: 0,
             ply: 0,
             terminate: SearchTerminate::Nothing,
+            allocated_time: Duration::from_secs(0),
         }
     }
 }
@@ -417,6 +562,7 @@ impl SearchState {
 pub enum SearchInformation {
     BestMove(ChessMove),
     Summary(SearchSummary),
+    ExtraInfo(String),
 }
 
 #[derive(Debug)]
