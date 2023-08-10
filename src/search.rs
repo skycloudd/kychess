@@ -190,6 +190,7 @@ impl Search {
         beta: i32,
     ) -> i32 {
         let is_root = refs.search_state.ply == 0;
+        let mut do_pvs = false;
 
         if refs.search_state.nodes & 0x7ff == 0 {
             check_terminate(refs);
@@ -249,7 +250,15 @@ impl Search {
             let mut eval_score = 0;
 
             if !is_draw(refs) {
-                eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
+                if do_pvs {
+                    eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -alpha - 1, -alpha);
+
+                    if eval_score > alpha && eval_score < beta {
+                        eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
+                    }
+                } else {
+                    eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
+                }
             }
 
             refs.search_state.ply -= 1;
@@ -281,6 +290,8 @@ impl Search {
                 alpha = eval_score;
 
                 hash_flag = HashFlag::Exact;
+
+                do_pvs = true;
 
                 pv.clear();
                 pv.push(legal);
