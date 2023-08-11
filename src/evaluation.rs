@@ -1,44 +1,30 @@
 use chess::{Board, Color, Piece, Square};
 
-use crate::INFINITY;
-
 pub fn evaluate_position(board: &Board) -> i32 {
-    let score = match board.status() {
-        chess::BoardStatus::Ongoing => {
-            let mut score = 0;
+    let mut score = 0;
 
-            let is_endgame = is_endgame(board);
+    let is_endgame = is_endgame(board);
 
-            for sq in 0..64 {
-                let square = unsafe { Square::new(sq) }; // safety: square is always 0..=63
+    for sq in 0..64 {
+        let square = unsafe { Square::new(sq) }; // safety: square is always 0..=63
 
-                if let (Some(piece), Some(piece_colour)) =
-                    (board.piece_on(square), board.color_on(square))
-                {
-                    let piece_score = match piece {
-                        Piece::Pawn => 100,
-                        Piece::Knight => 320,
-                        Piece::Bishop => 330,
-                        Piece::Rook => 500,
-                        Piece::Queen => 900,
-                        Piece::King => 20000,
-                    } + piece_square(&piece, piece_colour, square, is_endgame);
+        if let (Some(piece), Some(piece_colour)) = (board.piece_on(square), board.color_on(square))
+        {
+            let piece_score = match piece {
+                Piece::Pawn => 100,
+                Piece::Knight => 320,
+                Piece::Bishop => 330,
+                Piece::Rook => 500,
+                Piece::Queen => 900,
+                Piece::King => 20000,
+            } + piece_square(&piece, piece_colour, square, is_endgame);
 
-                    score += match piece_colour {
-                        Color::White => piece_score,
-                        Color::Black => -piece_score,
-                    };
-                }
-            }
-
-            score
+            score += match piece_colour {
+                Color::White => piece_score,
+                Color::Black => -piece_score,
+            };
         }
-        chess::BoardStatus::Stalemate => 0,
-        chess::BoardStatus::Checkmate => match board.side_to_move() {
-            Color::White => -INFINITY,
-            Color::Black => INFINITY,
-        },
-    };
+    }
 
     match board.side_to_move() {
         Color::White => score,
@@ -118,14 +104,7 @@ fn is_endgame(board: &Board) -> bool {
     if board.pieces(Piece::Queen).0.count_ones() == 0 {
         true
     } else {
-        let white_queens = (board.pieces(Piece::Queen) & board.color_combined(Color::White))
-            .0
-            .count_ones();
-        let black_queens = (board.pieces(Piece::Queen) & board.color_combined(Color::Black))
-            .0
-            .count_ones();
-
-        let white_endgame = if white_queens == 1 {
+        let white_endgame = {
             let white_minor_pieces = ((board.pieces(Piece::Knight) | board.pieces(Piece::Bishop))
                 & board.color_combined(Color::White))
             .0
@@ -140,11 +119,9 @@ fn is_endgame(board: &Board) -> bool {
             } else {
                 false
             }
-        } else {
-            false
         };
 
-        let black_endgame = if black_queens == 1 {
+        let black_endgame = {
             let black_minor_pieces = ((board.pieces(Piece::Knight) | board.pieces(Piece::Bishop))
                 & board.color_combined(Color::Black))
             .0
@@ -159,8 +136,6 @@ fn is_endgame(board: &Board) -> bool {
             } else {
                 false
             }
-        } else {
-            false
         };
 
         white_endgame && black_endgame

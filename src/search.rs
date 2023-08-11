@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+const MAX_PLY: u8 = 200;
+
 pub struct Search {
     handle: Option<JoinHandle<()>>,
     control_tx: Option<Sender<SearchCommand>>,
@@ -89,7 +91,6 @@ impl Search {
         let mut stop = false;
 
         if refs.search_params.search_mode == SearchMode::GameTime {
-            // calculate total available time for this move
             let game_time = &refs.search_params.game_time;
 
             let is_white = refs.board.side_to_move() == chess::Color::White;
@@ -142,7 +143,7 @@ impl Search {
 
         refs.search_state.start_time = Some(Instant::now());
 
-        while (depth < 255) && !stop {
+        while (depth <= MAX_PLY) && !stop {
             refs.search_state.depth = depth;
 
             let eval = Self::negamax(refs, &mut root_pv, depth, alpha, beta);
@@ -173,7 +174,13 @@ impl Search {
                 depth += 1;
             }
 
-            if refs.search_state.terminate != SearchTerminate::Nothing {
+            let time_up = if refs.search_params.search_mode == SearchMode::GameTime {
+                refs.search_state.start_time.unwrap().elapsed() > refs.search_state.allocated_time
+            } else {
+                false
+            };
+
+            if (refs.search_state.terminate != SearchTerminate::Nothing) || time_up {
                 stop = true;
             }
         }
@@ -198,8 +205,7 @@ impl Search {
             return 0;
         }
 
-        if refs.search_state.ply >= 255 {
-            // return Search::quiescence(alpha, beta, pv, refs);
+        if refs.search_state.ply > MAX_PLY {
             return evaluate_position(refs.board);
         }
 
@@ -215,7 +221,7 @@ impl Search {
 
         refs.search_state.nodes += 1;
 
-        let mut best_eval_score = -INFINITY - 1;
+        let mut best_eval_score = -INFINITY;
 
         let mut legal_moves_found = 0;
 
@@ -296,7 +302,7 @@ impl Search {
             return 0;
         }
 
-        if refs.search_state.ply >= 255 {
+        if refs.search_state.ply > MAX_PLY {
             return evaluate_position(refs.board);
         }
 
@@ -351,7 +357,6 @@ impl Search {
 }
 
 fn is_draw(refs: &mut SearchRefs) -> bool {
-    // is_repition(refs) || (refs.halfmove_clock >= 100) ||
     is_insufficient_material(refs)
 }
 

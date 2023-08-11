@@ -86,7 +86,7 @@ impl Engine {
                     UciReport::GoMoveTime(move_time) => {
                         self.search.send(SearchCommand::Start(SearchParams {
                             search_mode: SearchMode::MoveTime,
-                            move_time: move_time - Duration::from_millis(50), // overhead
+                            move_time: move_time - Duration::from_millis(50),
                             game_time: GameTime::default(),
                         }))
                     }
