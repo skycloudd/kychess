@@ -225,7 +225,9 @@ impl Search {
 
         let mut legal_moves_found = 0;
 
-        for legal in MoveGen::new_legal(refs.board) {
+        let moves_ordered = move_ordering(refs);
+
+        for legal in moves_ordered {
             let old_pos = *refs.board;
             *refs.board = refs.board.make_move_new(legal);
 
@@ -456,6 +458,29 @@ fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
     }
 
     false
+}
+
+fn move_ordering(refs: &mut SearchRefs) -> Vec<ChessMove> {
+    let board = &refs.board;
+
+    let mut legal_moves = MoveGen::new_legal(board);
+
+    let mut moves = Vec::with_capacity(legal_moves.len());
+
+    let targets = board.color_combined(!board.side_to_move());
+    legal_moves.set_iterator_mask(*targets);
+
+    for legal in &mut legal_moves {
+        moves.push(legal);
+    }
+
+    legal_moves.set_iterator_mask(!EMPTY);
+
+    for legal in legal_moves {
+        moves.push(legal);
+    }
+
+    moves
 }
 
 fn check_terminate(refs: &mut SearchRefs) {
