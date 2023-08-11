@@ -205,7 +205,7 @@ impl Search {
             return 0;
         }
 
-        if refs.search_state.ply > MAX_PLY {
+        if refs.search_state.ply >= MAX_PLY {
             return evaluate_position(refs.board);
         }
 
@@ -221,7 +221,7 @@ impl Search {
 
         refs.search_state.nodes += 1;
 
-        let mut best_eval_score = -INFINITY;
+        let mut best_eval_score = -INFINITY - 1;
 
         let mut legal_moves_found = 0;
 
@@ -244,7 +244,7 @@ impl Search {
                 if do_pvs {
                     eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -alpha - 1, -alpha);
 
-                    if eval_score > alpha && eval_score < beta {
+                    if (eval_score > alpha) && (eval_score < beta) {
                         eval_score = -Self::negamax(refs, &mut node_pv, depth - 1, -beta, -alpha);
                     }
                 } else {
@@ -261,6 +261,17 @@ impl Search {
             }
 
             if eval_score >= beta {
+                // refs.tt.add(
+                //     board_hash,
+                //     CacheEntry::create(
+                //         depth,
+                //         refs.search_state.ply,
+                //         CacheFlag::Beta,
+                //         beta,
+                //         best_move.unwrap(),
+                //     ),
+                // );
+
                 return beta;
             }
 
@@ -283,6 +294,17 @@ impl Search {
             }
         }
 
+        // refs.tt.add(
+        //     board_hash,
+        //     CacheEntry::create(
+        //         depth,
+        //         refs.search_state.ply,
+        //         flag,
+        //         alpha,
+        //         best_move.unwrap(),
+        //     ),
+        // );
+
         alpha
     }
 
@@ -302,7 +324,7 @@ impl Search {
             return 0;
         }
 
-        if refs.search_state.ply > MAX_PLY {
+        if refs.search_state.ply >= MAX_PLY {
             return evaluate_position(refs.board);
         }
 

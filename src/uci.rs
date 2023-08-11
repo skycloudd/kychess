@@ -149,18 +149,15 @@ impl Uci {
                             UciInfoAttribute::Time(
                                 vampirc_uci::Duration::from_std(summary.time).unwrap(),
                             ),
-                            if summary.cp > INFINITY / 2 || summary.cp < -INFINITY / 2 {
-                                let mate_in_plies = if summary.cp > 0 {
-                                    INFINITY - summary.cp
-                                } else {
-                                    -INFINITY - summary.cp
-                                };
+                            if summary.cp.abs() > INFINITY / 2 {
+                                let mate_in_plies = INFINITY - summary.cp.abs();
+                                let sign = summary.cp.signum();
 
-                                let mate_in = mate_in_plies / 2 + mate_in_plies % 2;
+                                let mate_in_moves = mate_in_plies / 2 + mate_in_plies % 2;
 
                                 UciInfoAttribute::Score {
                                     cp: None,
-                                    mate: Some(mate_in as i8),
+                                    mate: Some((sign * mate_in_moves) as i8),
                                     lower_bound: None,
                                     upper_bound: None,
                                 }
