@@ -1,7 +1,7 @@
 use crate::evaluation::evaluate_position;
 use crate::uci::GameTime;
 use crate::{Information, INFINITY};
-use chess::{Board, CacheTable, ChessMove, Color, MoveGen, Piece, EMPTY};
+use chess::{Board, ChessMove, Color, MoveGen, Piece, EMPTY};
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -48,7 +48,6 @@ impl Search {
                     let mut refs = SearchRefs {
                         board: &mut board.lock().unwrap(),
                         search_params: search_params.as_ref().unwrap(),
-                        transposition_table: &mut CacheTable::new(1 << 21, SearchData::default()),
                         search_state: &mut SearchState::new(),
                         control_rx: &control_rx,
                         report_tx: &info_tx,
@@ -189,7 +188,6 @@ impl Search {
         mut alpha: i32,
         beta: i32,
     ) -> i32 {
-        let is_root = refs.search_state.ply == 0;
         let mut do_pvs = false;
 
         if refs.search_state.nodes & 0x7ff == 0 {
@@ -217,20 +215,7 @@ impl Search {
 
         refs.search_state.nodes += 1;
 
-        let position_hash = refs.board.get_hash();
-
-        if let Some(tt_entry) = refs.transposition_table.get(position_hash) {
-            if let Some((tt_value, _)) = tt_entry.get(depth, refs.search_state.ply, alpha, beta) {
-                if !is_root {
-                    return tt_value;
-                }
-            }
-        }
-
         let mut best_eval_score = -INFINITY - 1;
-        let mut best_move = None;
-
-        let mut hash_flag = HashFlag::Alpha;
 
         let mut legal_moves_found = 0;
 
@@ -267,29 +252,14 @@ impl Search {
 
             if eval_score > best_eval_score {
                 best_eval_score = eval_score;
-
-                best_move = Some(legal);
             }
 
             if eval_score >= beta {
-                refs.transposition_table.add(
-                    position_hash,
-                    SearchData::create(
-                        depth,
-                        refs.search_state.ply,
-                        HashFlag::Beta,
-                        beta,
-                        best_move.unwrap(),
-                    ),
-                );
-
                 return beta;
             }
 
             if eval_score > alpha {
                 alpha = eval_score;
-
-                hash_flag = HashFlag::Exact;
 
                 do_pvs = true;
 
@@ -306,17 +276,6 @@ impl Search {
                 return 0;
             }
         }
-
-        refs.transposition_table.add(
-            position_hash,
-            SearchData::create(
-                depth,
-                refs.search_state.ply,
-                hash_flag,
-                alpha,
-                best_move.unwrap(),
-            ),
-        );
 
         alpha
     }
@@ -540,7 +499,6 @@ pub enum SearchMode {
 pub struct SearchRefs<'a> {
     board: &'a mut Board,
     search_params: &'a SearchParams,
-    transposition_table: &'a mut CacheTable<SearchData>,
     search_state: &'a mut SearchState,
     control_rx: &'a Receiver<SearchCommand>,
     report_tx: &'a Sender<Information>,
@@ -586,73 +544,4 @@ pub struct SearchSummary {
     pub nodes: u64,         // nodes searched
     pub nps: u64,           // nodes per second
     pub pv: Vec<ChessMove>, // Principal Variation
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Default)]
-pub struct SearchData {
-    depth: u8,
-    eval: i32,
-    best_move: ChessMove,
-    flag: HashFlag,
-}
-
-impl SearchData {
-    pub fn create(depth: u8, ply: u8, flag: HashFlag, eval: i32, best_move: ChessMove) -> Self {
-        let mut v = eval;
-
-        if v > INFINITY / 2 {
-            v += ply as i32;
-        } else if v < -INFINITY / 2 {
-            v -= ply as i32;
-        }
-
-        Self {
-            depth,
-            eval: v,
-            best_move,
-            flag,
-        }
-    }
-
-    pub fn get(&self, depth: u8, ply: u8, alpha: i32, beta: i32) -> Option<(i32, ChessMove)> {
-        let mut value = None;
-
-        if self.depth > depth {
-            match self.flag {
-                HashFlag::Exact => {
-                    let mut v = self.eval;
-
-                    if v > INFINITY / 2 {
-                        v -= ply as i32;
-                    } else if v < -INFINITY / 2 {
-                        v += ply as i32;
-                    }
-
-                    value = Some(v);
-                }
-                HashFlag::Alpha => {
-                    if self.eval <= alpha {
-                        value = Some(alpha);
-                    }
-                }
-                HashFlag::Beta => {
-                    if self.eval >= beta {
-                        value = Some(beta);
-                    }
-                }
-                HashFlag::Nothing => (),
-            }
-        }
-
-        value.map(|v| (v, self.best_move))
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, PartialOrd, Default)]
-pub enum HashFlag {
-    #[default]
-    Nothing,
-    Exact,
-    Alpha,
-    Beta,
 }
