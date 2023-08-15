@@ -75,9 +75,7 @@ impl Engine {
                         }
                     }
                     UciReport::UciNewGame => {
-                        let mut board = self.board.lock().unwrap();
-
-                        *board = Board::default();
+                        *self.board.lock().unwrap() = Board::default();
                     }
                     UciReport::Stop => self.search.send(SearchCommand::Stop),
                     UciReport::Quit => self.quit(),
