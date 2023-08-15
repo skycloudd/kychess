@@ -46,7 +46,10 @@ impl Engine {
 
         self.uci.init(info_tx.clone());
 
-        self.search.init(info_tx, Arc::clone(&self.board));
+        let history = Arc::new(Mutex::new(Vec::new()));
+
+        self.search
+            .init(info_tx, Arc::clone(&self.board), Arc::clone(&history));
 
         while !self.quit {
             let information = self.info_rx.as_ref().unwrap().recv().unwrap();

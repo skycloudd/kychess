@@ -22,7 +22,12 @@ impl Search {
         }
     }
 
-    pub fn init(&mut self, info_tx: Sender<Information>, board: Arc<Mutex<Board>>) {
+    pub fn init(
+        &mut self,
+        info_tx: Sender<Information>,
+        board: Arc<Mutex<Board>>,
+        history: Arc<Mutex<Vec<HistoryEntry>>>,
+    ) {
         let (control_tx, control_rx) = crossbeam_channel::unbounded::<SearchCommand>();
 
         let h = thread::spawn(move || {
@@ -45,14 +50,13 @@ impl Search {
                 }
 
                 if !halt && !quit {
-                    let board = Arc::clone(&board);
-
                     let mut refs = SearchRefs {
                         board: &mut board.lock().unwrap(),
                         search_params: search_params.as_ref().unwrap(),
                         search_state: &mut SearchState::new(),
                         control_rx: &control_rx,
                         report_tx: &info_tx,
+                        history: &mut history.lock().unwrap(),
                     };
 
                     let (best_move, terminate) = Self::iterative_deepening(&mut refs);
@@ -228,8 +232,21 @@ impl Search {
         let moves_ordered = move_ordering(refs, pv.get(0).copied());
 
         for legal in moves_ordered {
-            let old_pos = *refs.board;
+            let old_pos = refs.board.clone();
             *refs.board = refs.board.make_move_new(legal);
+
+            refs.history.push(HistoryEntry {
+                hash: refs.board.get_hash(),
+                is_reversible_move: {
+                    if old_pos.piece_on(legal.get_source()) == Some(Piece::Pawn)
+                        || old_pos.piece_on(legal.get_dest()) != None
+                    {
+                        false
+                    } else {
+                        true
+                    }
+                },
+            });
 
             legal_moves_found += 1;
             refs.search_state.ply += 1;
@@ -257,6 +274,8 @@ impl Search {
             refs.search_state.ply -= 1;
 
             *refs.board = old_pos;
+
+            refs.history.pop();
 
             if eval_score > best_eval_score {
                 best_eval_score = eval_score;
@@ -346,7 +365,7 @@ impl Search {
         legal_moves.set_iterator_mask(*targets);
 
         for legal in legal_moves {
-            let old_board = *refs.board;
+            let old_board = refs.board.clone();
             *refs.board = refs.board.make_move_new(legal);
 
             refs.search_state.ply += 1;
@@ -381,55 +400,77 @@ impl Search {
 }
 
 fn is_draw(refs: &mut SearchRefs) -> bool {
-    is_insufficient_material(refs)
+    is_insufficient_material(refs) || is_threefold_repetition(refs) || is_fifty_move_rule(refs)
+}
+
+fn is_threefold_repetition(refs: &mut SearchRefs) -> bool {
+    let mut count = 0;
+
+    for i in 0..refs.history.len() {
+        if refs.history[i].hash == refs.board.get_hash() {
+            count += 1;
+        }
+    }
+
+    count >= 3
+}
+
+fn is_fifty_move_rule(refs: &mut SearchRefs) -> bool {
+    let mut count = 0;
+
+    for i in 0..refs.history.len() {
+        if refs.history[i].is_reversible_move {
+            count += 1;
+        } else {
+            count = 0;
+        }
+
+        if count >= 100 {
+            return true;
+        }
+    }
+
+    false
 }
 
 fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
-    let white_pawn_count = (refs.board.pieces(Piece::Pawn)
-        & refs.board.color_combined(Color::White))
-    .0
-    .count_ones();
+    let board = &refs.board;
 
-    let black_pawn_count = (refs.board.pieces(Piece::Pawn)
-        & refs.board.color_combined(Color::Black))
-    .0
-    .count_ones();
+    let white_pawn_count = (board.pieces(Piece::Pawn) & board.color_combined(Color::White))
+        .0
+        .count_ones();
 
-    let white_bishop_count = (refs.board.pieces(Piece::Bishop)
-        & refs.board.color_combined(Color::White))
-    .0
-    .count_ones();
-    let black_bishop_count = (refs.board.pieces(Piece::Bishop)
-        & refs.board.color_combined(Color::Black))
-    .0
-    .count_ones();
+    let black_pawn_count = (board.pieces(Piece::Pawn) & board.color_combined(Color::Black))
+        .0
+        .count_ones();
 
-    let white_knight_count = (refs.board.pieces(Piece::Knight)
-        & refs.board.color_combined(Color::White))
-    .0
-    .count_ones();
-    let black_knight_count = (refs.board.pieces(Piece::Knight)
-        & refs.board.color_combined(Color::Black))
-    .0
-    .count_ones();
+    let white_bishop_count = (board.pieces(Piece::Bishop) & board.color_combined(Color::White))
+        .0
+        .count_ones();
+    let black_bishop_count = (board.pieces(Piece::Bishop) & board.color_combined(Color::Black))
+        .0
+        .count_ones();
 
-    let white_rook_count = (refs.board.pieces(Piece::Rook)
-        & refs.board.color_combined(Color::White))
-    .0
-    .count_ones();
-    let black_rook_count = (refs.board.pieces(Piece::Rook)
-        & refs.board.color_combined(Color::Black))
-    .0
-    .count_ones();
+    let white_knight_count = (board.pieces(Piece::Knight) & board.color_combined(Color::White))
+        .0
+        .count_ones();
+    let black_knight_count = (board.pieces(Piece::Knight) & board.color_combined(Color::Black))
+        .0
+        .count_ones();
 
-    let white_queen_count = (refs.board.pieces(Piece::Queen)
-        & refs.board.color_combined(Color::White))
-    .0
-    .count_ones();
-    let black_queen_count = (refs.board.pieces(Piece::Queen)
-        & refs.board.color_combined(Color::Black))
-    .0
-    .count_ones();
+    let white_rook_count = (board.pieces(Piece::Rook) & board.color_combined(Color::White))
+        .0
+        .count_ones();
+    let black_rook_count = (board.pieces(Piece::Rook) & board.color_combined(Color::Black))
+        .0
+        .count_ones();
+
+    let white_queen_count = (board.pieces(Piece::Queen) & board.color_combined(Color::White))
+        .0
+        .count_ones();
+    let black_queen_count = (board.pieces(Piece::Queen) & board.color_combined(Color::Black))
+        .0
+        .count_ones();
 
     if white_pawn_count > 0
         || black_pawn_count > 0
@@ -461,9 +502,7 @@ fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
 }
 
 fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove> {
-    let board = &refs.board;
-
-    let mut legal_moves = MoveGen::new_legal(board);
+    let mut legal_moves = MoveGen::new_legal(refs.board);
 
     let mut moves = Vec::with_capacity(legal_moves.len());
 
@@ -471,7 +510,7 @@ fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove>
         moves.push(pv);
     }
 
-    let targets = board.color_combined(!board.side_to_move());
+    let targets = refs.board.color_combined(!refs.board.side_to_move());
     legal_moves.set_iterator_mask(*targets);
 
     for legal in &mut legal_moves {
@@ -564,6 +603,13 @@ pub struct SearchRefs<'a> {
     search_state: &'a mut SearchState,
     control_rx: &'a Receiver<SearchCommand>,
     report_tx: &'a Sender<Information>,
+    history: &'a mut Vec<HistoryEntry>,
+}
+
+#[derive(Clone, Copy)]
+pub struct HistoryEntry {
+    hash: u64,
+    is_reversible_move: bool,
 }
 
 struct SearchState {
