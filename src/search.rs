@@ -51,7 +51,7 @@ impl Search {
 
                 if !halt && !quit {
                     let mut refs = SearchRefs {
-                        board: &mut board.lock().unwrap(),
+                        board: Arc::clone(&board),
                         search_params: search_params.as_ref().unwrap(),
                         search_state: &mut SearchState::new(),
                         control_rx: &control_rx,
@@ -97,7 +97,7 @@ impl Search {
         if refs.search_params.search_mode == SearchMode::GameTime {
             let game_time = &refs.search_params.game_time;
 
-            let is_white = refs.board.side_to_move() == chess::Color::White;
+            let is_white = refs.board.lock().unwrap().side_to_move() == chess::Color::White;
 
             let clock = if is_white {
                 game_time.white_time.unwrap()
@@ -210,10 +210,10 @@ impl Search {
         }
 
         if refs.search_state.ply >= MAX_PLY {
-            return evaluate_position(refs.board);
+            return evaluate_position(&refs.board.lock().unwrap());
         }
 
-        let is_check = *refs.board.checkers() != EMPTY;
+        let is_check = *refs.board.lock().unwrap().checkers() != EMPTY;
 
         if is_check {
             depth += 1;
@@ -232,11 +232,13 @@ impl Search {
         let moves_ordered = move_ordering(refs, pv.get(0).copied());
 
         for legal in moves_ordered {
-            let old_pos = refs.board.clone();
-            *refs.board = refs.board.make_move_new(legal);
+            let old_pos = refs.board.lock().unwrap().clone();
+            let mut board = refs.board.lock().unwrap();
+
+            *board = board.make_move_new(legal);
 
             refs.history.push(HistoryEntry {
-                hash: refs.board.get_hash(),
+                hash: board.get_hash(),
                 is_reversible_move: {
                     if old_pos.piece_on(legal.get_source()) == Some(Piece::Pawn)
                         || old_pos.piece_on(legal.get_dest()) != None
@@ -247,6 +249,8 @@ impl Search {
                     }
                 },
             });
+
+            drop(board);
 
             legal_moves_found += 1;
             refs.search_state.ply += 1;
@@ -273,7 +277,7 @@ impl Search {
 
             refs.search_state.ply -= 1;
 
-            *refs.board = old_pos;
+            *refs.board.lock().unwrap() = old_pos;
 
             refs.history.pop();
 
@@ -345,11 +349,13 @@ impl Search {
             return 0;
         }
 
+        let board = refs.board.lock().unwrap();
+
         if refs.search_state.ply >= MAX_PLY {
-            return evaluate_position(refs.board);
+            return evaluate_position(&board);
         }
 
-        let eval_score = evaluate_position(refs.board);
+        let eval_score = evaluate_position(&board);
 
         if eval_score >= beta {
             return beta;
@@ -359,14 +365,20 @@ impl Search {
             alpha = eval_score
         }
 
-        let mut legal_moves = MoveGen::new_legal(refs.board);
+        let mut legal_moves = MoveGen::new_legal(&board);
 
-        let targets = refs.board.color_combined(!refs.board.side_to_move());
+        let targets = board.color_combined(!board.side_to_move());
         legal_moves.set_iterator_mask(*targets);
 
+        drop(board);
+
         for legal in legal_moves {
-            let old_board = refs.board.clone();
-            *refs.board = refs.board.make_move_new(legal);
+            let old_pos = refs.board.lock().unwrap().clone();
+            let mut board = refs.board.lock().unwrap();
+
+            *board = board.make_move_new(legal);
+
+            drop(board);
 
             refs.search_state.ply += 1;
 
@@ -380,7 +392,7 @@ impl Search {
 
             refs.search_state.ply -= 1;
 
-            *refs.board = old_board;
+            *refs.board.lock().unwrap() = old_pos;
 
             if score >= beta {
                 return beta;
@@ -404,10 +416,12 @@ fn is_draw(refs: &mut SearchRefs) -> bool {
 }
 
 fn is_threefold_repetition(refs: &mut SearchRefs) -> bool {
+    let board = refs.board.lock().unwrap();
+
     let mut count = 0;
 
     for i in 0..refs.history.len() {
-        if refs.history[i].hash == refs.board.get_hash() {
+        if refs.history[i].hash == board.get_hash() {
             count += 1;
         }
     }
@@ -434,7 +448,7 @@ fn is_fifty_move_rule(refs: &mut SearchRefs) -> bool {
 }
 
 fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
-    let board = &refs.board;
+    let board = refs.board.lock().unwrap();
 
     let white_pawn_count = (board.pieces(Piece::Pawn) & board.color_combined(Color::White))
         .0
@@ -502,7 +516,9 @@ fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
 }
 
 fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove> {
-    let mut legal_moves = MoveGen::new_legal(refs.board);
+    let board = refs.board.lock().unwrap();
+
+    let mut legal_moves = MoveGen::new_legal(&board);
 
     let mut moves = Vec::with_capacity(legal_moves.len());
 
@@ -510,7 +526,7 @@ fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove>
         moves.push(pv);
     }
 
-    let targets = refs.board.color_combined(!refs.board.side_to_move());
+    let targets = board.color_combined(!board.side_to_move());
     legal_moves.set_iterator_mask(*targets);
 
     for legal in &mut legal_moves {
@@ -598,7 +614,7 @@ pub enum SearchMode {
 }
 
 pub struct SearchRefs<'a> {
-    board: &'a mut Board,
+    board: Arc<Mutex<Board>>,
     search_params: &'a SearchParams,
     search_state: &'a mut SearchState,
     control_rx: &'a Receiver<SearchCommand>,

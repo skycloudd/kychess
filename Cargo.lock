@@ -241,7 +241,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kychess"
+name = "kittycat"
 version = "0.3.0"
 dependencies = [
  "chess",
