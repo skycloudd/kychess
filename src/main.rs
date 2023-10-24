@@ -1,7 +1,7 @@
 use chess::Board;
 use search::{Search, SearchCommand, SearchInformation, SearchMode, SearchParams};
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use uci::{GameTime, Uci, UciControl, UciReport};
 use vampirc_uci::UciMessage;
@@ -19,7 +19,7 @@ fn main() {
 }
 
 struct Engine {
-    board: Arc<Mutex<Board>>,
+    board: Arc<RwLock<Board>>,
     search: Search,
     uci: Uci,
     info_rx: Option<crossbeam_channel::Receiver<Information>>,
@@ -30,7 +30,7 @@ struct Engine {
 impl Engine {
     fn new() -> Self {
         Self {
-            board: Arc::new(Mutex::new(Board::default())),
+            board: Arc::new(RwLock::new(Board::default())),
             search: Search::new(),
             uci: Uci::new(),
             info_rx: None,
@@ -66,7 +66,7 @@ impl Engine {
                     UciReport::Debug(debug) => self.debug = debug,
                     UciReport::IsReady => self.uci.send(UciControl::Ready),
                     UciReport::Position(fen, moves) => {
-                        let mut board = self.board.lock().unwrap();
+                        let mut board = self.board.write().unwrap();
 
                         *board = Board::from_str(&fen).unwrap();
 
@@ -75,7 +75,7 @@ impl Engine {
                         }
                     }
                     UciReport::UciNewGame => {
-                        *self.board.lock().unwrap() = Board::default();
+                        *self.board.write().unwrap() = Board::default();
                     }
                     UciReport::Stop => self.search.send(SearchCommand::Stop),
                     UciReport::Quit => self.quit(),
