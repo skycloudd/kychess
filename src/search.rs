@@ -485,15 +485,15 @@ fn is_insufficient_material(refs: &mut SearchRefs) -> bool {
 }
 
 fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove> {
-    let mut legal_moves = MoveGen::new_legal(&refs.board.read().unwrap());
+    let board = refs.board.read().unwrap();
+
+    let mut legal_moves = MoveGen::new_legal(&board);
 
     let mut moves = Vec::with_capacity(legal_moves.len());
 
     if let Some(pv) = pv {
         moves.push(pv);
     }
-
-    let board = refs.board.read().unwrap();
 
     let targets = board.color_combined(!board.side_to_move());
     legal_moves.set_iterator_mask(*targets);
