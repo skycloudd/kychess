@@ -77,9 +77,9 @@ impl Uci {
 
                         UciMessage::Go {
                             time_control,
-                            search_control: _,
-                        } => match time_control {
-                            Some(tc) => match tc {
+                            search_control,
+                        } => match (time_control, search_control) {
+                            (Some(tc), None) => match tc {
                                 UciTimeControl::Ponder => todo!(),
 
                                 UciTimeControl::Infinite => UciReport::GoInfinite,
@@ -106,7 +106,8 @@ impl Uci {
                                     movetime.to_std().unwrap_or(Duration::from_secs(0)),
                                 ),
                             },
-                            None => todo!(),
+                            (None, Some(_sc)) => todo!(),
+                            _ => unreachable!(),
                         },
 
                         _ => UciReport::Unknown,
