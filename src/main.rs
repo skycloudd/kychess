@@ -106,7 +106,7 @@ impl Engine {
                         self.uci.send(UciControl::SearchSummary(summary));
                     }
                     SearchInformation::ExtraInfo(info) => {
-                        self.uci.send(UciControl::ExtraInfo(info));
+                        self.uci.send(UciControl::Info(info));
                     }
                 },
             }

@@ -1,7 +1,7 @@
 use crate::evaluation::evaluate_position;
 use crate::uci::GameTime;
 use crate::{Information, INFINITY};
-use chess::{Board, ChessMove, Color, MoveGen, Piece, EMPTY};
+use chess::{BitBoard, Board, ChessMove, Color, MoveGen, Piece, EMPTY};
 use crossbeam_channel::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{self, JoinHandle};
@@ -100,22 +100,18 @@ impl Search {
             let is_white = refs.board.read().unwrap().side_to_move() == chess::Color::White;
 
             let clock = if is_white {
-                game_time.white_time.unwrap()
+                game_time.wtime.unwrap()
             } else {
-                game_time.black_time.unwrap()
+                game_time.btime.unwrap()
             };
 
             let increment = if is_white {
-                game_time
-                    .white_increment
-                    .unwrap_or(Duration::from_millis(0))
+                game_time.winc.unwrap_or(Duration::from_millis(0))
             } else {
-                game_time
-                    .black_increment
-                    .unwrap_or(Duration::from_millis(0))
+                game_time.binc.unwrap_or(Duration::from_millis(0))
             };
 
-            let base_time = match game_time.moves_to_go {
+            let base_time = match game_time.mtg {
                 Some(mtg) => {
                     if mtg == 0 {
                         clock
@@ -123,7 +119,7 @@ impl Search {
                         clock / mtg as u32
                     }
                 }
-                None => clock / 20,
+                None => clock / 10,
             };
 
             let time_slice = base_time + increment - Duration::from_millis(100);
@@ -491,26 +487,25 @@ fn move_ordering(refs: &mut SearchRefs, pv: Option<ChessMove>) -> Vec<ChessMove>
 
     let mut moves = Vec::with_capacity(legal_moves.len());
 
-    if let Some(pv) = pv {
+    let pv_square_bitboard = if let Some(pv) = pv {
         moves.push(pv);
-    }
 
-    let targets = board.color_combined(!board.side_to_move());
-    legal_moves.set_iterator_mask(*targets);
+        BitBoard::from_square(pv.get_dest())
+    } else {
+        EMPTY
+    };
+
+    let targets = *board.color_combined(!board.side_to_move()) & !pv_square_bitboard;
+
+    legal_moves.set_iterator_mask(targets);
 
     for legal in &mut legal_moves {
-        if pv.is_some() && legal == pv.unwrap() {
-            continue;
-        }
         moves.push(legal);
     }
 
-    legal_moves.set_iterator_mask(!EMPTY);
+    legal_moves.set_iterator_mask(!EMPTY & !pv_square_bitboard);
 
     for legal in legal_moves {
-        if pv.is_some() && legal == pv.unwrap() {
-            continue;
-        }
         moves.push(legal);
     }
 

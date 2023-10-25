@@ -80,7 +80,7 @@ impl Uci {
                             search_control,
                         } => match (time_control, search_control) {
                             (Some(tc), None) => match tc {
-                                UciTimeControl::Ponder => todo!(),
+                                UciTimeControl::Ponder => panic!("ponder not supported"),
 
                                 UciTimeControl::Infinite => UciReport::GoInfinite,
 
@@ -91,15 +91,15 @@ impl Uci {
                                     black_increment,
                                     moves_to_go,
                                 } => UciReport::GoGameTime(GameTime {
-                                    white_time: white_time
+                                    wtime: white_time
                                         .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
-                                    black_time: black_time
+                                    btime: black_time
                                         .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
-                                    white_increment: white_increment
+                                    winc: white_increment
                                         .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
-                                    black_increment: black_increment
+                                    binc: black_increment
                                         .map(|t| t.to_std().unwrap_or(Duration::from_secs(0))),
-                                    moves_to_go,
+                                    mtg: moves_to_go,
                                 }),
 
                                 UciTimeControl::MoveTime(movetime) => UciReport::GoMoveTime(
@@ -156,7 +156,6 @@ impl Uci {
 
                                 let mate_in_moves = mate_in_plies / 2 + mate_in_plies % 2;
 
-                                #[allow(clippy::cast_possible_truncation)]
                                 UciInfoAttribute::Score {
                                     cp: None,
                                     mate: Some((sign * mate_in_moves) as i8),
@@ -178,7 +177,7 @@ impl Uci {
 
                         println!("{}", UciMessage::Info(attrs));
                     }
-                    UciControl::ExtraInfo(info) => {
+                    UciControl::Info(info) => {
                         println!("{}", UciMessage::info_string(info));
                     }
                 }
@@ -207,11 +206,11 @@ pub enum UciReport {
 
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct GameTime {
-    pub white_time: Option<Duration>,
-    pub black_time: Option<Duration>,
-    pub white_increment: Option<Duration>,
-    pub black_increment: Option<Duration>,
-    pub moves_to_go: Option<u8>,
+    pub wtime: Option<Duration>,
+    pub btime: Option<Duration>,
+    pub winc: Option<Duration>,
+    pub binc: Option<Duration>,
+    pub mtg: Option<u8>,
 }
 
 pub enum UciControl {
@@ -220,5 +219,5 @@ pub enum UciControl {
     Quit,
     BestMove(ChessMove),
     SearchSummary(SearchSummary),
-    ExtraInfo(String),
+    Info(String),
 }
