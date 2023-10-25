@@ -33,7 +33,7 @@ impl Uci {
     }
 
     fn report_thread(&mut self, report_tx: Sender<Information>) {
-        let mut incoming_data = String::from("");
+        let mut incoming_data = String::new();
 
         let report_handle = thread::spawn(move || {
             let mut quit = false;
@@ -115,7 +115,7 @@ impl Uci {
                     report_tx.send(Information::UciInformation(report)).unwrap();
                 }
 
-                incoming_data = String::from("");
+                incoming_data = String::new();
             }
         });
 
@@ -155,6 +155,7 @@ impl Uci {
 
                                 let mate_in_moves = mate_in_plies / 2 + mate_in_plies % 2;
 
+                                #[allow(clippy::cast_possible_truncation)]
                                 UciInfoAttribute::Score {
                                     cp: None,
                                     mate: Some((sign * mate_in_moves) as i8),

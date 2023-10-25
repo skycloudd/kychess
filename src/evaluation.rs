@@ -17,7 +17,7 @@ pub fn evaluate_position(board: &Board) -> i32 {
                 Piece::Rook => 500,
                 Piece::Queen => 900,
                 Piece::King => 20000,
-            } + piece_square(&piece, piece_colour, square, is_endgame);
+            } + piece_square(piece, piece_colour, square, is_endgame);
 
             score += match piece_colour {
                 Color::White => piece_score,
@@ -32,7 +32,7 @@ pub fn evaluate_position(board: &Board) -> i32 {
     }
 }
 
-fn piece_square(piece: &Piece, piece_colour: Color, square: Square, is_endgame: bool) -> i32 {
+fn piece_square(piece: Piece, piece_colour: Color, square: Square, is_endgame: bool) -> i32 {
     let table = match piece {
         Piece::Pawn => PAWN_TABLE,
         Piece::Knight => KNIGHT_TABLE,
@@ -114,11 +114,7 @@ fn is_endgame(board: &Board) -> bool {
                 .0
                 .count_ones();
 
-            if white_minor_pieces <= 1 && white_rooks == 0 {
-                true
-            } else {
-                false
-            }
+            white_minor_pieces <= 1 && white_rooks == 0
         };
 
         let black_endgame = {
@@ -131,11 +127,7 @@ fn is_endgame(board: &Board) -> bool {
                 .0
                 .count_ones();
 
-            if black_minor_pieces <= 1 && black_rooks == 0 {
-                true
-            } else {
-                false
-            }
+            black_minor_pieces <= 1 && black_rooks == 0
         };
 
         white_endgame && black_endgame

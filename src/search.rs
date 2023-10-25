@@ -219,7 +219,7 @@ impl Search {
             depth += 1;
         }
 
-        if depth <= 0 {
+        if depth == 0 {
             return Search::quiescence(alpha, beta, pv, refs);
         }
 
@@ -232,7 +232,7 @@ impl Search {
         let moves_ordered = move_ordering(refs, pv.get(0).copied());
 
         for legal in moves_ordered {
-            let old_pos = refs.board.read().unwrap().clone();
+            let old_pos = *refs.board.read().unwrap();
 
             let new_move = refs.board.read().unwrap().make_move_new(legal);
 
@@ -240,15 +240,8 @@ impl Search {
 
             refs.history.push(HistoryEntry {
                 hash: refs.board.read().unwrap().get_hash(),
-                is_reversible_move: {
-                    if old_pos.piece_on(legal.get_source()) == Some(Piece::Pawn)
-                        || old_pos.piece_on(legal.get_dest()) != None
-                    {
-                        false
-                    } else {
-                        true
-                    }
-                },
+                is_reversible_move: !(old_pos.piece_on(legal.get_source()) == Some(Piece::Pawn)
+                    || old_pos.piece_on(legal.get_dest()).is_some()),
             });
 
             legal_moves_found += 1;
@@ -285,17 +278,6 @@ impl Search {
             }
 
             if eval_score >= beta {
-                // refs.tt.add(
-                //     board_hash,
-                //     CacheEntry::create(
-                //         depth,
-                //         refs.search_state.ply,
-                //         CacheFlag::Beta,
-                //         beta,
-                //         best_move.unwrap(),
-                //     ),
-                // );
-
                 return beta;
             }
 
@@ -313,21 +295,10 @@ impl Search {
         if legal_moves_found == 0 {
             if is_check {
                 return -INFINITY + refs.search_state.ply as i32;
-            } else {
-                return 0;
             }
-        }
 
-        // refs.tt.add(
-        //     board_hash,
-        //     CacheEntry::create(
-        //         depth,
-        //         refs.search_state.ply,
-        //         flag,
-        //         alpha,
-        //         best_move.unwrap(),
-        //     ),
-        // );
+            return 0;
+        }
 
         alpha
     }
@@ -359,7 +330,7 @@ impl Search {
         }
 
         if eval_score > alpha {
-            alpha = eval_score
+            alpha = eval_score;
         }
 
         let mut legal_moves = MoveGen::new_legal(&refs.board.read().unwrap());
@@ -372,7 +343,7 @@ impl Search {
         drop(board);
 
         for legal in legal_moves {
-            let old_pos = refs.board.read().unwrap().clone();
+            let old_pos = *refs.board.read().unwrap();
 
             let new_move = refs.board.read().unwrap().make_move_new(legal);
 
@@ -578,7 +549,7 @@ fn check_terminate(refs: &mut SearchRefs) {
             };
 
             if elapsed >= (allocated.mul_f64(overshoot_factor)) {
-                refs.search_state.terminate = SearchTerminate::Stop
+                refs.search_state.terminate = SearchTerminate::Stop;
             }
         }
     }

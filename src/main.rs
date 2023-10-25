@@ -89,24 +89,24 @@ impl Engine {
                             search_mode: SearchMode::MoveTime,
                             move_time: move_time - Duration::from_millis(50),
                             game_time: GameTime::default(),
-                        }))
+                        }));
                     }
                     UciReport::GoGameTime(game_time) => {
                         self.search.send(SearchCommand::Start(SearchParams {
                             search_mode: SearchMode::GameTime,
                             move_time: Duration::default(),
                             game_time,
-                        }))
+                        }));
                     }
                     UciReport::Unknown => (),
                 },
                 Information::SearchInformation(search_info) => match search_info {
                     SearchInformation::BestMove(bm) => self.uci.send(UciControl::BestMove(bm)),
                     SearchInformation::Summary(summary) => {
-                        self.uci.send(UciControl::SearchSummary(summary))
+                        self.uci.send(UciControl::SearchSummary(summary));
                     }
                     SearchInformation::ExtraInfo(info) => {
-                        self.uci.send(UciControl::ExtraInfo(info))
+                        self.uci.send(UciControl::ExtraInfo(info));
                     }
                 },
             }
